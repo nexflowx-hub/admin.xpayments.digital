@@ -2,15 +2,16 @@ import Link from 'next/link';
 import {
   Activity,
   BadgeDollarSign,
-  Boxes,
   Building2,
   ChevronRight,
   CircleDollarSign,
   Cpu,
   FileClock,
+  Headphones,
   LogOut,
   Network,
   ReceiptText,
+  Settings2,
   ShieldCheck,
   Store,
   UsersRound,
@@ -21,6 +22,8 @@ import type { ControlPlaneUser } from '@/lib/control-plane';
 
 const NAV = [
   { href: '/overview', label: 'Command Center', key: 'overview', icon: Activity },
+  { href: '/operations', label: 'Live Operations', key: 'operations', icon: Settings2 },
+  { href: '/tickets', label: 'Tickets & Support', key: 'tickets', icon: Headphones },
   { href: '/merchants', label: 'Merchants', key: 'merchants', icon: Building2 },
   { href: '/stores', label: 'Stores', key: 'stores', icon: Store },
   { href: '/transactions', label: 'Transactions', key: 'transactions', icon: ReceiptText },
@@ -47,10 +50,7 @@ export function ControlPlaneShell({
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark"><span>X</span></div>
-          <div>
-            <strong>XPAYMENTS</strong>
-            <small>Control Plane</small>
-          </div>
+          <div><strong>XPAYMENTS</strong><small>Control Plane</small></div>
         </div>
 
         <div className="environment-chip"><span className="status-dot" />PRODUCTION</div>
@@ -83,7 +83,7 @@ export function ControlPlaneShell({
             <CircleDollarSign size={17} />
             <span>Internal Operations</span>
             <span className="topbar-separator">/</span>
-            <span className="muted">Read-only foundation</span>
+            <span className="muted">Live Control Plane</span>
           </div>
           <div className="topbar-user">
             <div className="user-avatar">{initials(user.name)}</div>
