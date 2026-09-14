@@ -8,6 +8,7 @@ import {
   Cpu,
   FileClock,
   Headphones,
+  Landmark,
   LogOut,
   Network,
   ReceiptText,
@@ -31,6 +32,7 @@ const NAV = [
   { href: '/gateways', label: 'Gateway Vaults', key: 'gateways', icon: ShieldCheck },
   { href: '/fees', label: 'Fees & Tiers', key: 'fees', icon: BadgeDollarSign },
   { href: '/payouts', label: 'Finance & Payouts', key: 'payouts', icon: WalletCards },
+  { href: '/treasury', label: 'Treasury & Settlements', key: 'treasury', icon: Landmark },
   { href: '/expert', label: 'XPay Expert', key: 'expert', icon: Workflow },
   { href: '/users', label: 'Actors & Access', key: 'users', icon: UsersRound },
   { href: '/audit', label: 'Audit & Security', key: 'audit', icon: FileClock }
