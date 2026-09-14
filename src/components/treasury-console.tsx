@@ -37,6 +37,9 @@ const money = (value: unknown, currency = 'BRL') => {
 };
 
 const key = () => `cp_treasury_${crypto.randomUUID()}`;
+const roleOf = (wallet: Row) => String(wallet.walletRole || wallet.wallet_role || '').toUpperCase();
+const currencyOf = (wallet: Row) => String(wallet.currency || '').toUpperCase();
+const metadataOf = (wallet: Row): Record<string, any> => wallet?.metadata && typeof wallet.metadata === 'object' ? wallet.metadata : {};
 
 export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
   const [data, setData] = useState<Data>({ merchants: [], stores: [], physical: [], accounting: [], releases: [], movements: [] });
@@ -98,25 +101,48 @@ export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
   const merchantStores = useMemo(() => data.stores.filter((s) => !merchantId || String(s.merchant_id || s.merchantId) === merchantId), [data.stores, merchantId]);
   const physicalForMerchant = useMemo(() => data.physical.filter((w) => !merchantId || String(w.merchantId || w.merchant_id) === merchantId), [data.physical, merchantId]);
   const accountingForMerchant = useMemo(() => data.accounting.filter((w) => !merchantId || String(w.merchantId || w.merchant_id) === merchantId), [data.accounting, merchantId]);
-  const walletBrl = physicalForMerchant.find((w) => String(w.code).toUpperCase() === 'WALLET-BRL');
+  const walletBrl = merchantId ? physicalForMerchant.find((w) => String(w.code).toUpperCase() === 'WALLET-BRL') : undefined;
+  const blockedForMerchant = useMemo(
+    () => merchantId ? physicalForMerchant.filter((w) => roleOf(w) === 'BLOCKED') : [],
+    [merchantId, physicalForMerchant]
+  );
   const awaiting = data.releases.filter((r) => r.operationalStatus === 'awaiting_admin');
 
+  const preferredDestination = (targetMerchantId: string, targetCurrency: string) => {
+    const wallets = data.physical.filter((w) => String(w.merchantId || w.merchant_id) === targetMerchantId);
+    const currencyUpper = String(targetCurrency || '').toUpperCase();
+    const blocked = wallets.find((w) =>
+      roleOf(w) === 'BLOCKED' &&
+      currencyOf(w) === currencyUpper &&
+      metadataOf(w).defaultPayoutDestination === true
+    );
+    if (blocked) return blocked;
+    return wallets.find((w) => String(w.code).toUpperCase() === 'WALLET-BRL');
+  };
+
   useEffect(() => {
-    if (walletBrl && form.destinationWalletId !== String(walletBrl.id)) {
-      setForm((old) => ({ ...old, destinationWalletId: String(walletBrl.id) }));
+    if (!merchantId) return;
+    const preferred = preferredDestination(merchantId, form.sourceCurrency);
+    if (preferred && form.destinationWalletId !== String(preferred.id)) {
+      setForm((old) => ({ ...old, destinationWalletId: String(preferred.id) }));
     }
-  }, [walletBrl, form.destinationWalletId]);
+  }, [merchantId, form.sourceCurrency, form.destinationWalletId, data.physical]);
 
   const useRelease = (release: Row) => {
-    const source = accountingForMerchant.find((w) => String(w.currency).toUpperCase() === String(release.currency).toUpperCase());
-    const destination = physicalForMerchant.find((w) => String(w.code).toUpperCase() === 'WALLET-BRL');
-    setMerchantId(String(release.merchantId || ''));
+    const targetMerchantId = String(release.merchantId || '');
+    const releaseCurrency = String(release.currency || 'EUR').toUpperCase();
+    const source = data.accounting.find((w) =>
+      String(w.merchantId || w.merchant_id) === targetMerchantId &&
+      currencyOf(w) === releaseCurrency
+    );
+    const destination = preferredDestination(targetMerchantId, releaseCurrency);
+    setMerchantId(targetMerchantId);
     setStoreId(String(release.storeId || ''));
     setForm((old) => ({
       ...old,
       sourceWalletId: source ? String(source.id) : '',
       destinationWalletId: destination ? String(destination.id) : '',
-      sourceCurrency: String(release.currency || 'EUR').toUpperCase(),
+      sourceCurrency: releaseCurrency,
       sourceAmount: String(release.amount || ''),
       reference: `SETTLEMENT-${String(release.releaseDate || '').replaceAll('-', '')}`,
       idempotencyKey: key()
@@ -141,7 +167,7 @@ export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
         notes: form.notes || undefined,
         idempotencyKey: form.idempotencyKey
       });
-      setNotice({ ok: true, text: result.idempotent ? 'Operação já existia; nenhum valor foi duplicado.' : 'Settlement confirmado e Wallet física atualizada.' });
+      setNotice({ ok: true, text: result.idempotent ? 'Operação já existia; nenhum valor foi duplicado.' : 'Settlement confirmado e Treasury Wallet atualizada.' });
       setForm((old) => ({ ...old, sourceAmount: '', creditAmount: '', fxRate: '', fxCost: '0', payoutStatementId: '', notes: '', idempotencyKey: key() }));
       await refresh();
     } catch (error) {
@@ -153,7 +179,7 @@ export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
 
   return <div className={styles.wrap}>
     <div className={styles.hero}>
-      <div><h1>Treasury & Settlements</h1><p>Visão global por Merchant e Store. Wallets contabilísticas permanecem no Finance Core; Wallet-BRL/USDT são contas físicas de settlement. Conversão e custos são aprovados manualmente.</p></div>
+      <div><h1>Treasury & Settlements</h1><p>Visão global por Merchant e Store. Wallets contabilísticas permanecem no Finance Core; Wallet-BRL/USDT são contas físicas de settlement e Wallet-Block retém fundos por moeda. Conversão e custos são aprovados manualmente.</p></div>
       <span className={styles.chip}>MANUAL SETTLEMENT</span>
     </div>
 
@@ -168,6 +194,7 @@ export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
 
     <div className={styles.cards}>
       <div className={`${styles.card} ${styles.physical}`}><small>Wallet-BRL física</small><strong>{walletBrl ? money(walletBrl.balance, 'BRL') : '—'}</strong><span className={styles.muted}>{walletBrl ? `${walletBrl.merchantName} · PagarPIX` : 'Selecione um Merchant'}</span></div>
+      <div className={styles.card}><small>Wallet-Block</small><strong>{blockedForMerchant.length}</strong><span className={styles.muted}>{blockedForMerchant.length ? blockedForMerchant.map((w) => `${w.currency}: ${money(w.balance, w.currency)}`).join(' · ') : 'Sem saldos bloqueados / selecione um Merchant'}</span></div>
       <div className={styles.card}><small>Pendências para ação</small><strong>{awaiting.length}</strong><span className={styles.muted}>Provider confirmado, aguarda operador</span></div>
       <div className={styles.card}><small>Wallets contabilísticas</small><strong>{accountingForMerchant.length}</strong><span className={styles.muted}>Nunca somadas entre moedas</span></div>
       <div className={styles.card}><small>Treasury movements</small><strong>{data.movements.length}</strong><span className={styles.muted}>Últimos 100 movimentos</span></div>
@@ -191,7 +218,7 @@ export function TreasuryConsole({ user }: { user: ControlPlaneUser }) {
           <Field label="Notas internas"><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
           <Field label="Idempotency key"><input className={styles.mono} value={form.idempotencyKey} readOnly /></Field>
           <button className={styles.button} disabled={busy || !canWrite || !merchantId || !form.sourceWalletId || !form.destinationWalletId || !Number(form.sourceAmount) || !Number(form.creditAmount)} onClick={() => void confirmSettlement()}>{canWrite ? 'CONFIRMAR SETTLEMENT' : 'SEM PERMISSÃO DE ESCRITA'}</button>
-          <small className={styles.muted}>A confirmação debita a Wallet contabilística e credita a Treasury Wallet na mesma transação. Nenhum FX automático é executado.</small>
+          <small className={styles.muted}>A confirmação debita a Wallet contabilística e credita a Treasury Wallet escolhida na mesma transação. Para Merchants com política de bloqueio, a Wallet-Block da mesma moeda é pré-selecionada. Nenhum FX automático é executado.</small>
         </div>
       </section>
     </div>
